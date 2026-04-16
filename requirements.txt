@@ -1,0 +1,23 @@
+# Core dependencies
+langchain-core>=0.1.0
+langchain>=0.1.0
+langchain-openai>=0.0.1
+pandas>=1.5
+numpy>=1.24
+aiohttp>=3.8
+requests>=2.31.0
+vnstock>=3.4.0
+
+# Security & Environment
+python-dotenv>=1.0.0  # 🔐 For loading .env files
+
+# Utilities
+python-dateutil
+sentence-transformers>=3.0.0
+
+# NLP
+textblob>=0.17.0  # Sentiment analysis
+
+# Optional (comment out if not using):
+# yfinance>=0.2.54
+# vnstock3

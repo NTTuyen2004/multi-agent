@@ -1,0 +1,22 @@
+# ⚠️ BẢO MẬT: KHÔNG XÓA FILE NÀY, NHƯNG ĐỂ TRỐNG
+# Hãy đặt API key vào ENVIRONMENT VARIABLE thay vì file này
+
+# Cách 1: Đặt Environment Variable (RECOMMENDED)
+# 
+# Windows PowerShell:
+#   $env:OPENAI_API_KEY = "sk-proj-your-key-here"
+#
+# Windows CMD:
+#   set OPENAI_API_KEY=sk-proj-your-key-here
+#
+# Linux/Mac:
+#   export OPENAI_API_KEY="sk-proj-your-key-here"
+#
+# Python (.env file, sử dụng python-dotenv):
+#   OPENAI_API_KEY=sk-proj-your-key-here
+
+# Cách 2: Nếu vẫn muốn dùng file này
+# Thay thế dòng dưới bằng OpenAI API key của bạn:
+# sk-proj-your-actual-key-here
+
+# IMPORTANT: File này HOẶC env var phải có giá trị thực tế để hệ thống chạy

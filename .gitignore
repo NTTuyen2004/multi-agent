@@ -1,0 +1,40 @@
+# 🔐 Git Ignore - Bảo vệ files nhạy cảm
+
+# Environment Variables (SECRET)
+.env
+.env.local
+*.key_openai
+
+# Cache & Temporary Files
+.cache/
+*.log
+*.db
+*.pyc
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# OS
+Thumbs.db
+.DS_Store
+~$*.xlsx
+
+# Project specific
+agent_debug.log
+*.db
+.cache/
