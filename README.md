@@ -1,212 +1,208 @@
-# Financial AI Agent Team (Vietnam) 🇻🇳
+# 📊 Financial AI Agent Team System
 
-Multi-agent system for Vietnamese stock market analysis with **conversation memory**, **parallel processing**, and **intelligent caching**.
+Hệ thống multi-agent cho **phân tích chứng khoán Việt Nam** theo mô hình **Leader–Worker**, tập trung vào 3 điểm “ăn tiền” khi demo/đánh giá: **Stateful Memory**, **Parallel Execution**, **Smart Caching**.
 
-## 🎯 Features
+## 1. Tổng Quan & Demo: Dự án giải quyết vấn đề gì?
 
-- ✅ **Stateful Multi-turn Conversation**: Agent remembers context across turns
-- ✅ **5 Specialized Agents** (Data, News, Analysis, Info, Report)
-- ✅ **Parallel Execution**: All agents run simultaneously (3x faster)
-- ✅ **Smart Caching**: LLM cache + file cache (50-80% cost reduction)
-- ✅ **Honest Error Reporting**: No fake data, transparent about failures
-- ✅ **Leader-Worker Architecture**: Clean separation of concerns
+### Bối cảnh bài toán
+Phân tích 1 mã cổ phiếu ở Việt Nam thường không chỉ là “giá tăng/giảm”, mà là tổng hợp nhiều lát cắt:
 
-## 🚀 Quick Start
+- **Giá lịch sử (OHLCV)** để nhìn xu hướng/biến động
+- **Tin tức + sentiment** để hiểu yếu tố tác động ngắn hạn
+- **Chỉ báo kỹ thuật** (SMA/RSI/…)
+- **Thông tin doanh nghiệp** (hồ sơ, ngành, quy mô, …)
+- **Báo cáo tài chính / báo cáo phân tích** để có góc nhìn dài hạn
 
-### 1. Setup (Critical - Read SETUP.md!)
+Cách làm truyền thống hay gặp 3 vấn đề:
 
-```bash
-# Create virtual environment
-python -m venv .venv
-.venv\Scripts\activate  # Windows
+1) Lấy dữ liệu theo từng bước **tuần tự** → thời gian chờ cộng dồn
+2) Người dùng hỏi nhiều lượt → hệ thống **không nhớ ngữ cảnh** (ví dụ “cái này” là mã nào)
+3) Query lặp lại → **tốn chi phí** và tạo độ trễ không cần thiết
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Set API Key (CHOOSE ONE):
-# Option A: Environment Variable (Recommended ✅)
-$env:OPENAI_API_KEY = "sk-proj-your-key"
-
-# Option B: Create .env file
-cp .env.example .env
-# Then edit .env and add your API key
-
-# Option C: Edit key_openai file (Legacy)
-echo "sk-proj-your-key" > key_openai
-```
-
-**⚠️ IMPORTANT:** See [SETUP.md](SETUP.md) for detailed security setup!
-
-### 2. Interactive Mode (Recommended)
+### Demo nhanh
+Chạy chế độ interactive để thấy rõ “memory” (multi-turn):
 
 ```bash
 python -m src.fin_agent_team.cli --interactive
-
-# Example session:
-💬 You: VCB thông tin?
-🤖 Agent: VCB là Ngân hàng Vietcombank...
-
-💬 You: Giá cho cái này?
-🤖 Agent: (Hiểu "cái này" = VCB) Dữ liệu giá...
-
-💬 You: help
-📋 Commands: history, clear, save, status, quit
 ```
 
-### 3. Single Query
+Ví dụ flow demo (một phiên hỏi đáp):
+
+- Lượt 1: hỏi thông tin mã
+- Lượt 2: hỏi tiếp “giá/technical/cái này…” → hệ thống vẫn hiểu đúng mã đang nói nhờ Conversation Memory
+
+Ngoài interactive, có thể chạy 1 truy vấn đơn:
 
 ```bash
-python -m src.fin_agent_team.cli \
-  --symbol VCB \
-  --start 2024-01-01 \
-  --end 2024-04-15
+python -m src.fin_agent_team.cli --symbol VCB --query "VCB analysis"
 ```
 
-### 4. Python API
+## 2. Kiến Trúc Hệ Thống (High-level): Sơ đồ Leader–Worker
 
-```python
-import asyncio
-from src.fin_agent_team.supervisor import Supervisor
+### Tổng quan luồng xử lý
 
-async def main():
-    sup = Supervisor()
-    state = await sup.run(
-        query="VCB analysis",
-        symbol="VCB",
-        start="2024-01-01",
-        end="2024-04-15"
-    )
-    print(state["final_recommendation"])
+- **Conversation Memory (stateful)**: lưu lịch sử lượt hỏi–đáp, entity (mã cổ phiếu, thời gian, ý định), giúp truy vấn sau kế thừa ngữ cảnh.
+- **Supervisor**: điều phối toàn bộ pipeline.
+- **Leader layer**:
+  - **Router**: chọn “tối thiểu các tác vụ cần chạy” (data/news/analysis/info/report)
+  - **Synthesizer**: tổng hợp kết quả thành câu trả lời cuối
+- **Worker layer (5 agents)** chạy song song (parallel) để thu thập dữ liệu/insight.
 
-asyncio.run(main())
+Sơ đồ Mermaid (kiểu như ví dụ bạn gửi, phân biệt rõ **Supervisor** vs **Workers**):
+
+```mermaid
+graph TD
+    subgraph Client["🖥️ Client / CLI"]
+        CLI["CLI (src.fin_agent_team.cli)"] -->|"payload: query, symbol, start, end, mode"| SUP["Supervisor (orchestrator)"]
+    end
+
+    subgraph Memory["🧠 Conversation Memory"]
+        MEM["ConversationMemory (stateful)\nturns + entities + pronoun resolution"]
+    end
+
+    subgraph Control["🧭 Control-plane (Supervisor + Leader)"]
+        SUP -->|"read/update"| MEM
+        SUP -->|"load prompts"| PROMPTS["prompts/prompts.txt"]
+        SUP -->|"decide minimal actions"| ROUTER["Leader.Router\n(gpt-4o-mini)"]
+        ROUTER -->|"actions[]"| GATHER["Fan-out\nasyncio.gather"]
+        GATHER -->|"fan-in"| MERGE["Merge results -> AgentState"]
+        MERGE -->|"final synthesis"| SYNTH["Leader.Synthesizer\n(gpt-4o)"]
+        SYNTH -->|"final_recommendation"| RESP["Stream/Return to CLI"]
+    end
+
+    subgraph Workers["👷 Worker layer = data-plane (5 agents)"]
+        DATA["DataAgent\nOHLCV/market data"]
+        NEWS["NewsAgent\nnews + sentiment"]
+        ANALYST["AnalystAgent\nindicators (SMA/RSI/...)" ]
+        INFO["InfoAgent\ncompany profile"]
+        REPORT["ReportAgent\nfinancial/report"]
+    end
+
+    GATHER --> DATA
+    GATHER --> NEWS
+    GATHER --> ANALYST
+    GATHER --> INFO
+    GATHER --> REPORT
+
+    subgraph Cache["💾 Cache"]
+        LLMCache["LangChain InMemoryCache\n(LLM calls)"]
+        FileCache["File-based cache\n(.cache/)"]
+    end
+
+    ROUTER -->|"LLM call (cached)"| LLMCache
+    SYNTH -->|"LLM call (cached)"| LLMCache
+    REPORT -->|"LLM call (cached)"| LLMCache
+
+    DATA -->|"cacheable"| FileCache
+    NEWS -->|"cacheable"| FileCache
+    INFO -->|"cacheable"| FileCache
+
+    subgraph External["🌐 External services"]
+        OpenAI["OpenAI API"]
+        VNStock["vnstock"]
+    end
+
+    LLMCache -->|"miss -> request"| OpenAI
+    DATA -->|"fetch"| VNStock
+    NEWS -->|"fetch"| VNStock
+
+    classDef control fill:#eef2ff,stroke:#4f46e5,color:#111827;
+    classDef worker fill:#ecfdf5,stroke:#16a34a,color:#111827;
+    classDef cache fill:#fff7ed,stroke:#ea580c,color:#111827;
+
+    class SUP,PROMPTS,ROUTER,GATHER,MERGE,SYNTH,RESP control;
+    class DATA,NEWS,ANALYST,INFO,REPORT worker;
+    class LLMCache,FileCache cache;
 ```
 
-## 📚 Documentation
+### Output
+Kết quả trả về theo dạng “báo cáo/khuyến nghị” đã được tổng hợp, thay vì chỉ dump dữ liệu thô.
 
-- **[SETUP.md](SETUP.md)** - 🔐 Installation & API Key Setup (READ THIS FIRST!)
-- **[AGENT_SYSTEM.md](AGENT_SYSTEM.md)** - System architecture & design
-- **[STATEFUL_SYSTEM.md](STATEFUL_SYSTEM.md)** - Conversation memory details
+## 3. Tính Năng Nổi Bật (Unique Selling Points)
 
-## 🏗️ Architecture
+### 3.1 Stateful Memory (Conversation Memory)
 
-```
-┌─────────────────────────────────────┐
-│   CONVERSATION MEMORY (Stateful)    │
-│   - Remembers context across turns  │
-│   - Extracts entities (symbols)     │
-│   - Persists to disk                │
-└───────────────┬─────────────────────┘
-                │
-                ▼
-┌─────────────────────────────────────┐
-│        LEADER LAYER (gpt-4o)        │
-│   - Route tasks (analyze_intent)    │
-│   - Synthesize results              │
-└───────────────┬─────────────────────┘
-                │
-        ┌───────┴────────────────┐
-        ▼                        ▼
-┌──────────────────────┐  ┌──────────────────┐
-│   WORKER AGENTS      │  │   CACHING LAYER  │
-│  (Run in Parallel)   │  │  - LLM cache     │
-│                      │  │  - File cache    │
-│  📊 DataAgent        │  │  - 50-80% $save  │
-│  📰 NewsAgent        │  └──────────────────┘
-│  📈 AnalystAgent     │
-│  🏢 InfoAgent        │
-│  📑 ReportAgent      │
-└──────────────────────┘
-```
+- **Vấn đề**: Người dùng thường hỏi theo kiểu hội thoại: “VCB thông tin?”, “giá sao?”, “kỹ thuật thế nào?”, “cái này có rủi ro gì?”
+- **Giải pháp**: Conversation Memory lưu lịch sử + entities để:
+  - nhận diện mã đang nói
+  - kế thừa bối cảnh giữa các lượt
+  - hỗ trợ load/save session (phục vụ demo hoặc chạy lâu)
 
-## 🔐 Security (IMPORTANT!)
+Trong CLI có các lệnh phục vụ demo như `history`, `clear`, `save`, `status`.
 
-### ✅ Protected by .gitignore
+### 3.2 Parallel Execution (chạy song song)
 
-```
-.env                 # Secret (use this for local dev)
-key_openai          # Legacy (keep empty or comments only)
-.env.local          # Never commit
-```
+- **Vấn đề**: Nếu gọi lần lượt 5 tác vụ (giá → tin → chỉ báo → info → report) thì thời gian là tổng cộng từng bước.
+- **Giải pháp**: Supervisor chạy các worker theo kiểu “fan-out/fan-in” bằng `asyncio.gather`, nên tổng thời gian gần bằng tác vụ lâu nhất.
 
-### ✅ Recommended Setup
+Tác dụng thực tế khi demo: cảm giác hệ thống “nhanh” và “mượt” hơn đáng kể khi hỏi các câu cần nhiều nguồn.
 
-Use **environment variables** or `.env` file:
+### 3.3 Smart Caching (LLM + data)
+
+Caching được bật ở 2 tầng chính:
+
+- **LLM in-memory cache** (LangChain `InMemoryCache`): tránh gọi lại LLM cho prompt/đầu vào trùng.
+- **File-based cache** (qua decorator/cache layer của project): cache kết quả các hàm lấy dữ liệu để giảm gọi lại nguồn dữ liệu và giảm độ trễ.
+
+Mục tiêu: giảm query lặp, giảm chi phí API và tăng tốc độ phản hồi trong các vòng demo lặp lại.
+
+## 4. Tech Stack
+
+Bộ từ khóa/technology đúng theo repo hiện tại:
+
+| Nhóm | Công nghệ | Mục đích |
+|---|---|---|
+| LLM orchestration | `langchain`, `langchain-core` | điều phối prompt/chain và tích hợp cache |
+| OpenAI client | `langchain-openai` | gọi LLM qua `ChatOpenAI` |
+| Async | `asyncio`, `aiohttp` | chạy song song + gọi network |
+| Market data | `vnstock` | dữ liệu thị trường Việt Nam |
+| Data processing | `pandas`, `numpy` | xử lý bảng dữ liệu, chỉ báo |
+| NLP/Sentiment | `textblob` | sentiment từ tin tức |
+| Env/secrets | `python-dotenv` | nạp `OPENAI_API_KEY` từ file `.env` (tùy chọn) |
+| Other utilities | `requests`, `python-dateutil`, `sentence-transformers` | tiện ích/embedding (nếu dùng) |
+
+Yêu cầu runtime: Python 3.9+ (khuyến nghị 3.10+).
+
+## 5. Hướng Dẫn Cài Đặt (Quick Start)
+
+### Bước 1: Tạo môi trường và cài dependencies
 
 ```bash
-# .env file (don't commit!)
-OPENAI_API_KEY=sk-proj-your-actual-key
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-Or set environment variable:
+### Bước 2: Thiết lập OpenAI API Key (không commit vào repo)
 
-```bash
-# Windows PowerShell
-$env:OPENAI_API_KEY = "sk-proj-your-key"
+PowerShell (khuyến nghị cho phiên hiện tại):
 
-# Linux/Mac
-export OPENAI_API_KEY="sk-proj-your-key"
-```
-
-## 📊 Performance
-
-| Feature | Speed | Cost |
-|---------|-------|------|
-| **First Query** | 5-10s | Regular |
-| **Cached Query** | <1s | -80% 💰 |
-| **Parallel Agents** | 3s | Same |
-| **Sequential** | 10s | Same |
-
-## 🧠 Stateful System Example
-
-```
-BEFORE (Stateless):
-Turn 1: "VCB info?" → Returns data ✓
-Turn 2: "Price for this?" → ERROR ✗ ("this" = undefined)
-
-AFTER (Stateful):
-Turn 1: "VCB info?" → Saves VCB to memory ✓
-Turn 2: "Price for this?" → Agent knows "this" = VCB ✓
-Turn 3: "Should I buy?" → Full context available ✓
-```
-
-## 📁 Project Structure
-
-```
-d:/Agent AI/
-├── .env.example          # Template (commit this)
-├── .env                  # Secret (git ignored)
-├── .gitignore            # Protects secrets
-├── src/fin_agent_team/
-│   ├── supervisor.py     # Main orchestrator
-│   ├── cli.py            # Interactive CLI
-│   ├── conversation_memory.py  # Stateful memory
-│   ├── cache.py          # Smart caching
-│   └── agents/           # 5 specialized agents
-├── prompts/prompts.txt   # Configuration
-├── test_full_workflow.py # 6-step workflow test
-├── requirements.txt      # Dependencies
-└── SETUP.md             # Setup guide
-```
-
-## 🔍 Example Workflow
-
-```
-Input: "Tư vấn đầu tư cho VCB trong 3 tháng"
-    │
-    ├─ 📊 DataAgent: Fetch 252 rows OHLCV
-    ├─ 📈 AnalystAgent: Calculate SMA20, SMA50, RSI14
-    ├─ 📰 NewsAgent: 3 articles, sentiment +0.33
-    ├─ 🏢 InfoAgent: Company profile
-    └─ 🧠 Leader: Synthesize → "GIỮ hoặc MUA nếu long-term"
-```
-
-## 🛠️ Dependencies
-- If `vnstock3` or external search APIs aren't available, the data/news agents will fall back to deterministic mock data so you can develop locally.
-- This repository is structured for clarity and extension — you can swap in real web-search or transformer-based sentiment analysis later.
-
-**Running the supervisor:**
-```bash
-# Set API key (or create key_openai file)
+```powershell
 $env:OPENAI_API_KEY = "sk-..."
-python run.py
+```
+
+Hoặc tạo file `.env` ở root:
+
+```text
+OPENAI_API_KEY=sk-...
+```
+
+### Bước 3: Chạy demo
+
+Interactive (multi-turn + memory):
+
+```bash
+python -m src.fin_agent_team.cli --interactive
+```
+
+Single query:
+
+```bash
+python -m src.fin_agent_team.cli --symbol VCB --query "VCB analysis"
+```
+
+### Bước 4: Verify project chạy thật (quan trọng)
+
+```bash
+python tests/test_full_workflow.py
 ```
