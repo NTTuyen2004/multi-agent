@@ -48,22 +48,27 @@ python -m src.fin_agent_team.cli --interactive
 ### System Diagram
 
 ```mermaid
+   graph TD
+    %% --- CÀI ĐẶT STYLE CHUẨN ---
     classDef cli fill:#f8fafc,stroke:#475569,stroke-width:2px,color:#0f172a,font-weight:bold;
     classDef control fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a8a,font-weight:bold;
     classDef worker fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#064e3b;
     classDef data fill:#fdf4ff,stroke:#c026d3,stroke-width:2px,color:#701a75,font-weight:bold;
     classDef cache fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#9a3412;
 
+    %% --- THÀNH PHẦN NGOẠI VI ---
     CLI(["🖥️ Client / CLI"]):::cli
     MEM[("🧠 Conversation Memory")]:::cache
     LLM_CACHE[("💾 LangChain LLM Cache")]:::cache
 
+    %% --- BƯỚC 1: TẦNG ĐIỀU PHỐI ---
     subgraph PHASE1 [1. ORCHESTRATION & DISPATCH]
         SUP["🎯 Supervisor"]:::control
         ROUTER{"🔀 Leader.Router"}:::control
         FANOUT[["⚡ Fan-out (asyncio.gather)"]]:::control
     end
 
+    %% --- BƯỚC 2: TẦNG THỰC THI ---
     subgraph PHASE2 [2. WORKER LAYER]
         A1["📈 DataAgent"]:::worker
         A2["📰 NewsAgent"]:::worker
@@ -72,26 +77,67 @@ python -m src.fin_agent_team.cli --interactive
         A5["📑 ReportAgent"]:::worker
     end
 
+    %% --- BƯỚC 3: HẠ TẦNG DỮ LIỆU ---
     subgraph PHASE3 [3. DATA & LOCAL CACHE]
         VNSTOCK[("💹 vnstock API")]:::data
         FILE_CACHE[("📁 File-based Cache")]:::cache
     end
 
+    %% --- BƯỚC 4: TỔNG HỢP & BÁO CÁO ---
     subgraph PHASE4 [4. SYNTHESIS & REPORTING]
         MERGE[["🧬 Merge results -> AgentState"]]:::control
         SYNTH{"📊 Leader.Synthesizer"}:::control
     end
 
-    CLI --> SUP
-    SUP <--> MEM
-    SUP --> ROUTER
-    ROUTER --> FANOUT
-    FANOUT --> A1 & A2 & A3 & A4 & A5
-    A1 & A2 & A3 & A4 & A5 -.-> VNSTOCK
-    A1 & A2 & A3 & A4 & A5 -.-> FILE_CACHE
-    A1 & A2 & A3 & A4 & A5 --> MERGE
-    MERGE --> SYNTH
-    SYNTH --> CLI
+    %% =======================================
+    %% LUỒNG 1: NHẬN YÊU CẦU
+    %% =======================================
+    CLI -->|"1. Payload"| SUP
+    SUP <-->|"2. Read/Update"| MEM
+    SUP -->|"3. Delegate"| ROUTER
+    ROUTER -->|"4. Actions"| FANOUT
+
+    %% =======================================
+    %% LUỒNG 2: CHIA TASK CHO AGENT
+    %% =======================================
+    FANOUT --> A1
+    FANOUT --> A2
+    FANOUT --> A3
+    FANOUT --> A4
+    FANOUT --> A5
+
+    %% =======================================
+    %% LUỒNG 3: TẤT CẢ AGENT LẤY DỮ LIỆU VNSTOCK
+    %% =======================================
+    A1 -.->|"Fetch"| VNSTOCK
+    A2 -.->|"Fetch"| VNSTOCK
+    A3 -.->|"Fetch"| VNSTOCK
+    A4 -.->|"Fetch"| VNSTOCK
+    A5 -.->|"Fetch"| VNSTOCK
+
+    A1 -.->|"Cacheable"| FILE_CACHE
+    A2 -.->|"Cacheable"| FILE_CACHE
+    A3 -.->|"Cacheable"| FILE_CACHE
+    A4 -.->|"Cacheable"| FILE_CACHE
+    A5 -.->|"Cacheable"| FILE_CACHE
+
+    %% =======================================
+    %% LUỒNG 4: NỘP BÁO CÁO VỀ SUPERVISOR
+    %% =======================================
+    A1 -->|"Fan-in"| MERGE
+    A2 -->|"Fan-in"| MERGE
+    A3 -->|"Fan-in"| MERGE
+    A4 -->|"Fan-in"| MERGE
+    A5 -->|"Fan-in"| MERGE
+
+    MERGE -->|"AgentState"| SYNTH
+    SYNTH -->|"5. Final Recommendation"| CLI
+
+    %% =======================================
+    %% LUỒNG PHỤ: CALL LLM
+    %% =======================================
+    ROUTER -.->|"LLM Call"| LLM_CACHE
+    SYNTH -.->|"LLM Call"| LLM_CACHE
 ```
 
 ## 3. Unique Selling Points (USPs)
