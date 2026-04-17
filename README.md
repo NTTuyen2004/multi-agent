@@ -206,3 +206,9 @@ python -m src.fin_agent_team.cli --symbol VCB --query "VCB analysis"
 ```bash
 python tests/test_full_workflow.py
 ```
+
+## 6. Log / Vấn Đề Chưa Giải Quyết
+
+- **2026-04-17 — Report (Báo cáo tài chính)**: Chưa làm trọn vẹn phần “report báo cáo tài chính” vì một số luồng lấy dữ liệu bị `vnstock` chặn/giới hạn truy cập (không truy vấn được BCTC theo kỳ như mong muốn).
+    - **Hướng giải quyết khả thi**: tải dữ liệu về (offline dump) rồi ingest vào vector store (Milvus chạy trong Docker) để truy vấn theo ngữ nghĩa.
+    - **Rủi ro/nhược điểm hiện tại**: dữ liệu BCTC theo nhiều mã × nhiều kỳ rất lớn → tốn tài nguyên (storage + embedding) và khi query dễ **retrieval thiếu/nhầm kỳ**, dẫn tới câu trả lời **sai** hoặc “lẫn số liệu”. Vì vậy, nếu đi theo hướng Milvus cần chiến lược phân vùng + lọc metadata theo mã/kỳ, và/hoặc tách phần số liệu dạng bảng sang storage có cấu trúc (SQL), Milvus chỉ giữ narrative/summarized text.
