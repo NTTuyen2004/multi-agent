@@ -52,67 +52,81 @@ Sơ đồ Mermaid (kiểu như ví dụ bạn gửi, phân biệt rõ **Supervis
 
 ```mermaid
 graph TD
-    subgraph Client["🖥️ Client / CLI"]
-        CLI["CLI (src.fin_agent_team.cli)"] -->|"payload: query, symbol, start, end, mode"| SUP["Supervisor (orchestrator)"]
+    %% Định nghĩa bảng màu Enterprise
+    classDef user fill:#ffffff,stroke:#000,stroke-width:2px;
+    classDef supervisor fill:#1e40af,stroke:#1e40af,color:#fff,stroke-width:2px;
+    classDef logic fill:#f1f5f9,stroke:#3b82f6,color:#1e40af,stroke-width:1px;
+    classDef agent fill:#f0fdf4,stroke:#16a34a,color:#14532d,stroke-width:1px;
+    classDef cache fill:#fff7ed,stroke:#ea580c,color:#7c2d12,stroke-width:1px;
+    classDef vnstock fill:#fdf4ff,stroke:#c026d3,color:#701a75,stroke-width:2px;
+    classDef openai fill:#f3f4f6,stroke:#4b5563,color:#1f2937,stroke-dasharray: 5 5;
+
+    %% --- 1. TẦNG GIAO TIẾP ---
+    USER((👤 User / CLI))
+
+    %% --- 2. TẦNG ĐIỀU PHỐI (CONTROL PLANE) ---
+    subgraph ORCHESTRATOR [TRUNG TÂM ĐIỀU PHỐI]
+        SUP["🎯 Supervisor"]
+        MEM[(🧠 Conv. Memory)]
+        ROUTER{{"🔀 Leader.Router<br/>(gpt-4o-mini)"}}
     end
 
-    subgraph Memory["🧠 Conversation Memory"]
-        MEM["ConversationMemory (stateful)\nturns + entities + pronoun resolution"]
+    %% --- 3. TẦNG THỰC THI (DATA PLANE) ---
+    subgraph WORKER_LAYER [TẦNG THỰC THI - MULTI-AGENTS]
+        direction LR
+        A1["📈 DataAgent"]
+        A2["📰 NewsAgent"]
+        A3["🧪 AnalystAgent"]
+        A4["🏢 InfoAgent"]
+        A5["📑 ReportAgent"]
     end
 
-    subgraph Control["🧭 Control-plane (Supervisor + Leader)"]
-        SUP -->|"read/update"| MEM
-        SUP -->|"load prompts"| PROMPTS["prompts/prompts.txt"]
-        SUP -->|"decide minimal actions"| ROUTER["Leader.Router\n(gpt-4o-mini)"]
-        ROUTER -->|"actions[]"| GATHER["Fan-out\nasyncio.gather"]
-        GATHER -->|"fan-in"| MERGE["Merge results -> AgentState"]
-        MERGE -->|"final synthesis"| SYNTH["Leader.Synthesizer\n(gpt-4o)"]
-        SYNTH -->|"final_recommendation"| RESP["Stream/Return to CLI"]
+    %% --- 4. TẦNG TỔNG HỢP ---
+    subgraph FINAL_PROCESS [TỔNG HỢP KẾT QUẢ]
+        GATHER[[⚡ Async Gather]]
+        SYNTH{{"📊 Leader.Synthesizer<br/>(gpt-4o)"}}
     end
 
-    subgraph Workers["👷 Worker layer = data-plane (5 agents)"]
-        DATA["DataAgent\nOHLCV/market data"]
-        NEWS["NewsAgent\nnews + sentiment"]
-        ANALYST["AnalystAgent\nindicators (SMA/RSI/...)" ]
-        INFO["InfoAgent\ncompany profile"]
-        REPORT["ReportAgent\nfinancial/report"]
+    %% --- 5. TẦNG CACHE ---
+    subgraph CACHE_LAYER [BỘ NHỚ ĐỆM]
+        FILE_CACHE[(📁 File Cache)]
+        LLM_CACHE[(💾 LLM Cache)]
     end
 
-    GATHER --> DATA
-    GATHER --> NEWS
-    GATHER --> ANALYST
-    GATHER --> INFO
-    GATHER --> REPORT
-
-    subgraph Cache["💾 Cache"]
-        LLMCache["LangChain InMemoryCache\n(LLM calls)"]
-        FileCache["File-based cache\n(.cache/)"]
+    %% --- 6. TẦNG DỊCH VỤ NGOÀI ---
+    subgraph EXTERNAL [NGUỒN DỮ LIỆU & LLM]
+        VNSTOCK[["💹 vnstock<br/>(Market Data)"]]
+        OPENAI[["🤖 OpenAI API"]]
     end
 
-    ROUTER -->|"LLM call (cached)"| LLMCache
-    SYNTH -->|"LLM call (cached)"| LLMCache
-    REPORT -->|"LLM call (cached)"| LLMCache
+    %% --- LUỒNG ĐIỀU PHỐI CHÍNH ---
+    USER -->|1. Request| SUP
+    SUP <-->|Update state| MEM
+    SUP -->|2. Phân tích| ROUTER
+    ROUTER ==>|3. Giao việc| WORKER_LAYER
+    WORKER_LAYER ==>|4. Trả kết quả| GATHER
+    GATHER -->|5. Gom dữ liệu| SYNTH
+    SYNTH -->|6. Response| USER
 
-    DATA -->|"cacheable"| FileCache
-    NEWS -->|"cacheable"| FileCache
-    INFO -->|"cacheable"| FileCache
+    %% --- LUỒNG LẤY DỮ LIỆU VNSTOCK ---
+    %% Nhấn mạnh việc Data và News agent chủ động gọi vnstock
+    A1 -.->|Fetch OHLCV| VNSTOCK
+    A2 -.->|Fetch News| VNSTOCK
 
-    subgraph External["🌐 External services"]
-        OpenAI["OpenAI API"]
-        VNStock["vnstock"]
-    end
+    %% --- LUỒNG CACHE & LLM ---
+    ROUTER & SYNTH -.->|Query LLM| LLM_CACHE
+    LLM_CACHE -.->|Cache Miss| OPENAI
 
-    LLMCache -->|"miss -> request"| OpenAI
-    DATA -->|"fetch"| VNStock
-    NEWS -->|"fetch"| VNStock
+    A1 & A2 & A4 -.->|Lưu/Đọc Cache| FILE_CACHE
 
-    classDef control fill:#eef2ff,stroke:#4f46e5,color:#111827;
-    classDef worker fill:#ecfdf5,stroke:#16a34a,color:#111827;
-    classDef cache fill:#fff7ed,stroke:#ea580c,color:#111827;
-
-    class SUP,PROMPTS,ROUTER,GATHER,MERGE,SYNTH,RESP control;
-    class DATA,NEWS,ANALYST,INFO,REPORT worker;
-    class LLMCache,FileCache cache;
+    %% Áp dụng Style
+    class USER user;
+    class SUP supervisor;
+    class ROUTER,SYNTH,GATHER logic;
+    class A1,A2,A3,A4,A5 agent;
+    class MEM,FILE_CACHE,LLM_CACHE cache;
+    class VNSTOCK vnstock;
+    class OPENAI openai;
 ```
 
 ### Output
